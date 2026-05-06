@@ -27,13 +27,12 @@ REQUIRED_FIELDS = [
     "industry_comparison",
     "positive_clauses",
     "red_flags",
-    "questions_for_hrd",  # FIX: was "questions" — key must match schema exactly
+    "questions_for_hrd",
 ]
 
 BANNED_ARTICLES = ["pasal 162", "pasal 163", "pasal 164", "pasal 165"]
 
 # ── System prompt ──────────────────────────────────────────────────────────────
-# NOTE: {user_profile} is replaced at call time — do NOT hardcode a profile here
 SYSTEM_PROMPT = """\
 Kamu adalah analis ketenagakerjaan Indonesia senior yang sangat berpengalaman
 dalam hukum ketenagakerjaan: UU No. 13/2003, UU Cipta Kerja No. 11/2020, PP No. 35/2021.
@@ -80,6 +79,7 @@ PROBATION:
 BPJS:
 \u2192 BENAR: UU No. 24/2011 \u2014 wajib didaftarkan sejak hari pertama kerja
 \u2192 Klausul "BPJS aktif setelah probation" = ILEGAL, severity HIGH
+\u2192 industry_comparison untuk klausul BPJS harus menyebut ini melanggar UU, BUKAN "kebijakan yang berbeda-beda"
 
 JIKA TIDAK YAKIN pasal mana yang berlaku:
 \u2192 Tulis: "(perlu dikonfirmasi dengan konsultan hukum ketenagakerjaan)"
@@ -102,7 +102,7 @@ GUNAKAN framing yang aman:
 Severity HIGH untuk:
 - Probation tanpa kejelasan gaji selama probation
 - BPJS baru aktif setelah probation
-- Resign notice > 30 hari
+- Resign notice > 1 bulan
 - Durasi PKWT < 6 bulan
 - Klausul evaluasi kinerja yang tidak jelas kriterianya
 Bahasa: sangat sederhana, jelaskan implikasi praktis
@@ -143,12 +143,22 @@ risk_level:
 
 Konsistensi wajib: jangan pernah risk_level "low" jika ada flag "high"
 
+Aturan severity yang tidak bisa di-override oleh profil apapun:
+- Resign notice > 1 bulan = SELALU HIGH (PP No. 35/2021 Pasal 37)
+- BPJS aktif setelah probation = SELALU HIGH (UU No. 24/2011)
+- Probation di PKWT = SELALU HIGH (UU No. 11/2020)
+
 \u2550\u2550\u2550 FORMAT OUTPUT \u2550\u2550\u2550
 
 ATURAN CONFIDENCE per red flag:
 - "high": klausul jelas melanggar pasal spesifik yang disebutkan
 - "medium": klausul berpotensi bermasalah tapi tergantung konteks perusahaan
 - "low": interpretasi bisa berbeda-beda, perlu konfirmasi lawyer
+
+ATURAN industry_comparison:
+- Untuk klausul yang ILEGAL: sebutkan bahwa klausul melanggar UU secara eksplisit
+- JANGAN gunakan framing "kebijakan yang berbeda-beda" untuk klausul yang jelas ilegal
+- Untuk klausul yang tidak jelas ilegal: gunakan framing standar industri yang aman
 
 - JANGAN buat red flag duplikat untuk masalah yang serupa — gabungkan jadi satu flag
 - Pasal 61A UU 11/2020 HANYA untuk kompensasi PKWT, JANGAN gunakan untuk isu lain
@@ -173,17 +183,17 @@ JSON SCHEMA (ikuti persis \u2014 jangan tambah atau kurangi field):
   ],
   "red_flags": [
     {
-      "clause_text": "string — kutipan atau parafrase klausul bermasalah",
-      "problem": "string — penjelasan plain language kenapa ini berbahaya",
-      "profile_context": "string — implikasi spesifik untuk profil user ini",
+      "clause_text": "string \u2014 kutipan atau parafrase klausul bermasalah",
+      "problem": "string \u2014 penjelasan plain language kenapa ini berbahaya",
+      "profile_context": "string \u2014 implikasi spesifik untuk profil user ini",
       "severity": "high" | "medium" | "low",
       "confidence": "high" | "medium" | "low",
-      "confidence_note": "string — alasan singkat kenapa confidence ini",
-      "legal_reference": "string — pasal spesifik, atau '(perlu dikonfirmasi)'",
-      "should_be": "string — apa yang seharusnya ada di klausul ini",
-      "redline_suggestion": "string — kalimat pengganti konkret",
-      "hrd_answer_acceptable": "string — contoh jawaban HRD yang memadai",
-      "hrd_answer_not_acceptable": "string — jawaban dismissif realistis (WAJIB BERVARIASI)"
+      "confidence_note": "string \u2014 alasan singkat kenapa confidence ini",
+      "legal_reference": "string \u2014 pasal spesifik, atau '(perlu dikonfirmasi)'",
+      "should_be": "string \u2014 apa yang seharusnya ada di klausul ini",
+      "redline_suggestion": "string \u2014 kalimat pengganti konkret",
+      "hrd_answer_acceptable": "string \u2014 contoh jawaban HRD yang memadai",
+      "hrd_answer_not_acceptable": "string \u2014 jawaban dismissif realistis (WAJIB BERVARIASI)"
     }
   ],
   "questions_for_hrd": [
@@ -197,7 +207,7 @@ JSON SCHEMA (ikuti persis \u2014 jangan tambah atau kurangi field):
 }
 """
 
-# ── User prompt (kept short — system prompt has all the instructions) ──────────
+# ── User prompt ────────────────────────────────────────────────────────────────
 USER_PROMPT_TEMPLATE = """\
 Analisis kontrak kerja berikut. Kembalikan hanya JSON sesuai schema.
 
@@ -220,17 +230,15 @@ def analyze_contract(contract_text: str, profile_key: str = "experienced") -> di
     Returns:
         Parsed analysis dict, or an error dict if parsing fails.
     """
-    # FIX: resolve profile label with safe fallback
     profile_label = PROFILE_LABELS.get(profile_key, PROFILE_DEFAULT)
 
-    # FIX: inject profile into SYSTEM, keep USER message minimal
     system_message = SYSTEM_PROMPT.replace("{user_profile}", profile_label)
     user_message = USER_PROMPT_TEMPLATE.replace("{contract_text}", contract_text)
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": system_message},  # FIX: separate system message
+            {"role": "system", "content": system_message},
             {"role": "user",   "content": user_message},
         ],
         temperature=0.1,
@@ -248,7 +256,6 @@ def _parse_and_validate(raw: str) -> dict:
     # ── 1. Parse ──────────────────────────────────────────────────────────────
     try:
         clean = raw.strip()
-        # Strip markdown fences if model ignores response_format
         if clean.startswith("```"):
             clean = clean.split("```")[1]
             if clean.startswith("json"):
@@ -267,7 +274,6 @@ def _parse_and_validate(raw: str) -> dict:
     full_text = json.dumps(result, ensure_ascii=False).lower()
     for banned in BANNED_ARTICLES:
         if banned in full_text:
-            # Log for monitoring — don't surface raw legal error to user
             print(f"[WARN] Deprecated article in output: {banned}")
 
     # ── 4. Auto-correct scoring inconsistency ─────────────────────────────────
