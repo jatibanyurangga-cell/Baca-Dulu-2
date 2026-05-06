@@ -145,6 +145,11 @@ Konsistensi wajib: jangan pernah risk_level "low" jika ada flag "high"
 
 \u2550\u2550\u2550 FORMAT OUTPUT \u2550\u2550\u2550
 
+ATURAN CONFIDENCE per red flag:
+- "high": klausul jelas melanggar pasal spesifik yang disebutkan
+- "medium": klausul berpotensi bermasalah tapi tergantung konteks perusahaan
+- "low": interpretasi bisa berbeda-beda, perlu konfirmasi lawyer
+
 - JANGAN buat red flag duplikat untuk masalah yang serupa — gabungkan jadi satu flag
 - Pasal 61A UU 11/2020 HANYA untuk kompensasi PKWT, JANGAN gunakan untuk isu lain
 
@@ -168,15 +173,17 @@ JSON SCHEMA (ikuti persis \u2014 jangan tambah atau kurangi field):
   ],
   "red_flags": [
     {
-      "clause_text": "string \u2014 kutipan atau parafrase klausul bermasalah",
-      "problem": "string \u2014 penjelasan plain language kenapa ini berbahaya",
-      "profile_context": "string \u2014 implikasi spesifik untuk profil user ini",
+      "clause_text": "string — kutipan atau parafrase klausul bermasalah",
+      "problem": "string — penjelasan plain language kenapa ini berbahaya",
+      "profile_context": "string — implikasi spesifik untuk profil user ini",
       "severity": "high" | "medium" | "low",
-      "legal_reference": "string \u2014 pasal spesifik, atau '(perlu dikonfirmasi)'",
-      "should_be": "string \u2014 apa yang seharusnya ada di klausul ini",
-      "redline_suggestion": "string \u2014 kalimat pengganti konkret",
-      "hrd_answer_acceptable": "string \u2014 contoh jawaban HRD yang memadai",
-      "hrd_answer_not_acceptable": "string \u2014 jawaban dismissif realistis (WAJIB BERVARIASI)"
+      "confidence": "high" | "medium" | "low",
+      "confidence_note": "string — alasan singkat kenapa confidence ini",
+      "legal_reference": "string — pasal spesifik, atau '(perlu dikonfirmasi)'",
+      "should_be": "string — apa yang seharusnya ada di klausul ini",
+      "redline_suggestion": "string — kalimat pengganti konkret",
+      "hrd_answer_acceptable": "string — contoh jawaban HRD yang memadai",
+      "hrd_answer_not_acceptable": "string — jawaban dismissif realistis (WAJIB BERVARIASI)"
     }
   ],
   "questions_for_hrd": [
